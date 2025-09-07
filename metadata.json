@@ -1,0 +1,5 @@
+{
+  "name": "AI College-Wide Timetable Generator",
+  "description": "An AI-powered application that generates a balanced, conflict-free weekly timetable for an entire college. Users can manage departments, semesters, and subjects (including labs), and the AI creates an optimized schedule for all groups, which can be filtered by department or semester.",
+  "requestFramePermissions": []
+}
