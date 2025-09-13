@@ -1,53 +1,66 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
 import { Subject } from "../types";
 
-// The AI client will be initialized lazily on the first API call
-// to prevent the app from crashing on start-up if the API key is missing.
-let ai: GoogleGenAI;
+// The AI client and types will be loaded dynamically when the generate function is called.
+// This prevents the app from crashing on start-up if the @google/genai module
+// has top-level code that fails in a browser environment.
+let ai: any;
+let genaiModule: any;
 
-function getAiClient(): GoogleGenAI {
+async function getAiModules() {
+  if (!genaiModule) {
+    genaiModule = await import('@google/genai');
+  }
+  return genaiModule;
+}
+
+async function getAiClient() {
   if (!ai) {
-    ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+    const { GoogleGenAI } = await getAiModules();
+    if (!process.env.API_KEY) {
+      throw new Error("API_KEY environment variable is missing.");
+    }
+    ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
   return ai;
 }
 
-const periodSchema = {
-  type: Type.OBJECT,
-  properties: {
-    subject: { type: Type.STRING, description: "The name of the subject or activity." },
-    teacher: { type: Type.STRING, description: "The name of the teacher or supervisor." },
-    department: { type: Type.STRING, description: "The department associated with the period." },
-    semester: { type: Type.STRING, description: "The semester this class is for." },
-    isLab: { type: Type.BOOLEAN, description: "Set to true if this period is for a lab session, otherwise false." },
-    capacity: { type: Type.INTEGER, description: "The maximum student capacity for the class." },
-  },
-  required: ['subject', 'teacher', 'department', 'semester', 'isLab'],
-};
-
-const daySchema = {
-  type: Type.ARRAY,
-  items: periodSchema,
-  description: "An array of periods for the day. It is crucial this array contains exactly 8 items representing the 8 academic periods."
-};
-
-const timetableSchema = {
-  type: Type.OBJECT,
-  properties: {
-    Monday: { ...daySchema, description: "Schedule for Monday. Must contain exactly 8 period objects." },
-    Tuesday: { ...daySchema, description: "Schedule for Tuesday. Must contain exactly 8 period objects." },
-    Wednesday: { ...daySchema, description: "Schedule for Wednesday. Must contain exactly 8 period objects." },
-    Thursday: { ...daySchema, description: "Schedule for Thursday. Must contain exactly 8 period objects." },
-    Friday: { ...daySchema, description: "Schedule for Friday. Must contain exactly 8 period objects." },
-  },
-  required: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-};
-
-
 export const generateTimetable = async (subjects: Subject[]): Promise<string> => {
+  try {
+    const { Type } = await getAiModules();
 
-  const prompt = `
+    const periodSchema = {
+      type: Type.OBJECT,
+      properties: {
+        subject: { type: Type.STRING, description: "The name of the subject or activity." },
+        teacher: { type: Type.STRING, description: "The name of the teacher or supervisor." },
+        department: { type: Type.STRING, description: "The department associated with the period." },
+        semester: { type: Type.STRING, description: "The semester this class is for." },
+        isLab: { type: Type.BOOLEAN, description: "Set to true if this period is for a lab session, otherwise false." },
+        capacity: { type: Type.INTEGER, description: "The maximum student capacity for the class." },
+      },
+      required: ['subject', 'teacher', 'department', 'semester', 'isLab'],
+    };
+
+    const daySchema = {
+      type: Type.ARRAY,
+      items: periodSchema,
+      description: "An array of periods for the day. It is crucial this array contains exactly 8 items representing the 8 academic periods."
+    };
+
+    const timetableSchema = {
+      type: Type.OBJECT,
+      properties: {
+        Monday: { ...daySchema, description: "Schedule for Monday. Must contain exactly 8 period objects." },
+        Tuesday: { ...daySchema, description: "Schedule for Tuesday. Must contain exactly 8 period objects." },
+        Wednesday: { ...daySchema, description: "Schedule for Wednesday. Must contain exactly 8 period objects." },
+        Thursday: { ...daySchema, description: "Schedule for Thursday. Must contain exactly 8 period objects." },
+        Friday: { ...daySchema, description: "Schedule for Friday. Must contain exactly 8 period objects." },
+      },
+      required: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+    };
+
+
+    const prompt = `
     You are an expert timetable scheduler for an entire college. Your task is to generate a complete and conflict-free weekly timetable from Monday to Friday based on a list of subjects.
 
     **Core College-Wide Constraints (MUST be followed in this order of priority):**
@@ -84,8 +97,8 @@ export const generateTimetable = async (subjects: Subject[]): Promise<string> =>
     - Set \`isLab\` to \`true\` for any period that is part of a lab session.
     - Set \`isLab\` to \`false\` for all regular classes and placeholder activities (Library Hour, Study Hall, etc.).
   `;
-  try {
-    const response = await getAiClient().models.generateContent({
+    const client = await getAiClient();
+    const response = await client.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
@@ -101,6 +114,9 @@ export const generateTimetable = async (subjects: Subject[]): Promise<string> =>
     return response.text;
   } catch (error) {
     console.error("Error calling Gemini API:", error);
+    if (error instanceof Error && error.message.includes("API_KEY")) {
+       throw new Error("API key is missing or invalid. Please ensure it's configured correctly in your environment.");
+    }
     throw new Error("Failed to communicate with the AI scheduling service. Please check your internet connection or API key configuration.");
   }
 };
