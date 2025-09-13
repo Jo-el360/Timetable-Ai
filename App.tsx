@@ -1,47 +1,35 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { Subject, Timetable } from './types';
-import { DEPARTMENT_COLORS, DAYS, TIME_SLOTS } from './constants';
+import { DEPARTMENT_COLOR_PALETTE, DAYS, TIME_SLOTS } from './constants';
 import { generateTimetable } from './services/geminiService';
 import Header from './components/Header';
 import SubjectInput from './components/SubjectInput';
 import TimetableDisplay from './components/TimetableDisplay';
 
 const App: React.FC = () => {
-  const [subjects, setSubjects] = useState<Subject[]>([
-    { name: 'Quantum Physics', teacher: 'Dr. Evelyn Reed', department: 'Physics', semester: '3rd Semester', isLab: true, capacity: 25 },
-    { name: 'Classical Mechanics', teacher: 'Dr. Evelyn Reed', department: 'Physics', semester: '1st Semester', isLab: false, capacity: 50 },
-    { name: 'Organic Chemistry', teacher: 'Prof. Samuel Chen', department: 'Chemistry', semester: '3rd Semester', isLab: true, capacity: 20 },
-    { name: 'Intro to Chemistry', teacher: 'Prof. Samuel Chen', department: 'Chemistry', semester: '1st Semester', isLab: false, capacity: 60 },
-    { name: 'British Literature', teacher: 'Dr. Isabelle Grant', department: 'Literature', semester: '1st Semester', isLab: false, capacity: 40 },
-    { name: 'Advanced Calculus', teacher: 'Prof. Marcus Thorne', department: 'Mathematics', semester: '3rd Semester', isLab: false, capacity: 45 },
-    { name: 'Linear Algebra', teacher: 'Prof. Marcus Thorne', department: 'Mathematics', semester: '1st Semester', isLab: false, capacity: 45 },
-  ]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
 
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [departmentColorMap, setDepartmentColorMap] = useState<Record<string, string>>({});
   
   const [departmentFilter, setDepartmentFilter] = useState<string>('All');
   const [semesterFilter, setSemesterFilter] = useState<string>('All');
+  const [teacherFilter, setTeacherFilter] = useState<string>('All');
 
   const uniqueDepartments = useMemo(() => ['All', ...Array.from(new Set(subjects.map(s => s.department)))], [subjects]);
   const uniqueSemesters = useMemo(() => ['All', ...Array.from(new Set(subjects.map(s => s.semester)))], [subjects]);
+  const uniqueTeachers = useMemo(() => ['All', ...Array.from(new Set(subjects.map(s => s.teacher)))], [subjects]);
 
-  const generateDepartmentColorMap = (newTimetable: Timetable): Record<string, string> => {
-    const uniqueDepts = new Set<string>();
-    Object.values(newTimetable).forEach(daySchedule => {
-      daySchedule.forEach(period => {
-        if (period.department) uniqueDepts.add(period.department);
-      });
-    });
-
-    const newColorMap: Record<string, string> = {};
-    Array.from(uniqueDepts).forEach((dept, index) => {
-      newColorMap[dept] = DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length];
+  const departmentColorMap = useMemo(() => {
+    const uniqueDepts = [...new Set(subjects.map(s => s.department))];
+    const newColorMap: Record<string, typeof DEPARTMENT_COLOR_PALETTE[0]> = {};
+    uniqueDepts.forEach((dept, index) => {
+      newColorMap[dept] = DEPARTMENT_COLOR_PALETTE[index % DEPARTMENT_COLOR_PALETTE.length];
     });
     return newColorMap;
-  };
+  }, [subjects]);
+
 
   const handleGenerateTimetable = useCallback(async () => {
     if (subjects.length < 5) {
@@ -65,11 +53,10 @@ const App: React.FC = () => {
           throw new Error("The generated timetable is incomplete or malformed.");
         }
 
-        const newColorMap = generateDepartmentColorMap(newTimetable);
-        setDepartmentColorMap(newColorMap);
         setTimetable(newTimetable);
         setDepartmentFilter('All');
         setSemesterFilter('All');
+        setTeacherFilter('All');
 
       } catch (parseError) {
         console.error("JSON parsing or validation error:", parseError);
@@ -99,6 +86,7 @@ const App: React.FC = () => {
               setSubjects={setSubjects} 
               onGenerate={handleGenerateTimetable}
               isLoading={isLoading}
+              departmentColorMap={departmentColorMap}
             />
           </div>
           <div className="lg:w-2/3 xl:w-3/4">
@@ -128,6 +116,18 @@ const App: React.FC = () => {
                       {uniqueSemesters.map(sem => <option key={sem} value={sem}>{sem}</option>)}
                     </select>
                   </div>
+                  <div className="flex-1">
+                    <label htmlFor="teacherFilter" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Filter by Teacher</label>
+                    <select 
+                      id="teacherFilter"
+                      value={teacherFilter}
+                      onChange={(e) => setTeacherFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      disabled={!timetable}
+                    >
+                      {uniqueTeachers.map(teacher => <option key={teacher} value={teacher}>{teacher}</option>)}
+                    </select>
+                  </div>
               </div>
               <TimetableDisplay
                 timetable={timetable}
@@ -136,7 +136,8 @@ const App: React.FC = () => {
                 departmentColorMap={departmentColorMap}
                 isLoading={isLoading}
                 error={error}
-                filter={{ department: departmentFilter, semester: semesterFilter }}
+                filter={{ department: departmentFilter, semester: semesterFilter, teacher: teacherFilter }}
+                onRegenerate={handleGenerateTimetable}
               />
             </div>
           </div>

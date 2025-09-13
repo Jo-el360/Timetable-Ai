@@ -1,9 +1,11 @@
 export interface Subject {
+  id: number;
   name: string;
   teacher: string;
   department: string;
   semester: string;
   isLab: boolean;
+  periodsPerWeek: number;
   capacity?: number;
 }
 
@@ -18,6 +20,7 @@ export interface TimetablePeriod {
   teacher: string;
   department: string;
   semester: string;
+  isLab: boolean;
   capacity?: number;
 }
 
