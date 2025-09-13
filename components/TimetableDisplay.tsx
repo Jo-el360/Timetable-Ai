@@ -3,7 +3,9 @@ import { Timetable, TimeSlot } from '../types';
 import LoadingSpinner from './LoadingSpinner';
 import DownloadIcon from './icons/DownloadIcon';
 import RefreshIcon from './icons/RefreshIcon';
+import InformationCircleIcon from './icons/InformationCircleIcon';
 import { DEPARTMENT_COLOR_PALETTE } from '../constants';
+import PlusCircleIcon from './icons/PlusCircleIcon';
 
 interface TimetableDisplayProps {
   timetable: Timetable | null;
@@ -14,9 +16,11 @@ interface TimetableDisplayProps {
   error: string | null;
   filter: { department: string; semester: string; teacher: string; };
   onRegenerate: () => void;
+  onCellClick: (day: string, periodIndex: number) => void;
+  isSimulated: boolean;
 }
 
-const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlots, days, departmentColorMap, isLoading, error, filter, onRegenerate }) => {
+const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlots, days, departmentColorMap, isLoading, error, filter, onRegenerate, onCellClick, isSimulated }) => {
   
   const handleExportCSV = () => {
     if (!timetable) return;
@@ -57,16 +61,15 @@ const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlot
 
   const handleExportPDF = () => {
     if (!timetable) return;
+    
+    // @ts-ignore
+    const { jsPDF, autoTable } = window.jspdf;
 
-    // The jsPDF and autoTable libraries are loaded via script tags and attached to the window object.
-    const jspdf = (window as any).jspdf;
-    if (!jspdf || !jspdf.jsPDF || !jspdf.autoTable) {
+    if (!jsPDF || !autoTable) {
       console.error("jsPDF or jsPDF-AutoTable is not loaded correctly.");
       alert("Error: PDF generation library failed to load. Please try refreshing the page.");
       return;
     }
-
-    const { jsPDF, autoTable } = jspdf;
 
     const doc = new jsPDF({
         orientation: 'landscape',
@@ -96,9 +99,7 @@ const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlot
         });
         body.push(row);
     });
-
-    // Call autoTable as a function, passing the jsPDF doc instance as the first argument.
-    // This is the correct usage for the UMD version of the plugin.
+    
     autoTable(doc, {
         head: head,
         body: body,
@@ -169,6 +170,14 @@ const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlot
     
     return (
       <>
+        {isSimulated && (
+            <div className="mb-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400/50 rounded-lg flex items-center gap-3">
+                <InformationCircleIcon className="w-6 h-6 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+                <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                    <span className="font-semibold">Showing a simulated timetable.</span> For AI-optimized scheduling, an API key is required in the deployment environment.
+                </p>
+            </div>
+        )}
         <div className="flex flex-col sm:flex-row gap-2 justify-end mb-4">
           <button
             onClick={onRegenerate}
@@ -233,7 +242,13 @@ const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlot
                   const entry = daySchedule[periodIndex];
 
                   if (!entry) {
-                    cells.push(<td key={`slot-${slotIndex}`} className="p-2 border-l border-slate-200 dark:border-slate-700"></td>);
+                     cells.push(
+                        <td key={`slot-${slotIndex}`} className="p-1 border-l border-slate-200 dark:border-slate-700 align-middle group">
+                           <button onClick={() => onCellClick(day, periodIndex)} className="w-full h-full rounded-md flex items-center justify-center text-slate-300 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-400 dark:hover:text-slate-400 transition-colors">
+                            <PlusCircleIcon className="w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity" />
+                           </button>
+                        </td>
+                    );
                     continue;
                   }
 
@@ -242,7 +257,7 @@ const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlot
                   const teacherMatch = filter.teacher === 'All' || entry.teacher === filter.teacher;
 
                   if (!departmentMatch || !semesterMatch || !teacherMatch) {
-                    cells.push(<td key={`slot-${slotIndex}`} className="p-2 border-l border-slate-200 dark:border-slate-700"></td>);
+                    cells.push(<td key={`slot-${slotIndex}`} className="p-1 border-l border-slate-200 dark:border-slate-700"></td>);
                     continue;
                   }
                   
@@ -250,41 +265,25 @@ const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlot
 
                   let mergeCount = 1;
                   if (entry.isLab) {
-                    for (let j = 1; (slotIndex + j) < timeSlots.length; j++) {
-                      const nextSlot = timeSlots[slotIndex + j];
-                      const nextPeriodIndex = periodIndex + j;
-
-                      if (nextSlot.type !== 'PERIOD' || nextPeriodIndex >= daySchedule.length) {
-                        break;
-                      }
-
-                      const nextEntry = daySchedule[nextPeriodIndex];
-                      if (
-                        nextEntry.isLab &&
-                        nextEntry.subject === entry.subject &&
-                        nextEntry.teacher === entry.teacher &&
-                        nextEntry.semester === entry.semester
-                      ) {
-                        mergeCount++;
-                      } else {
-                        break;
-                      }
+                     for (let j = periodIndex + 1; j < daySchedule.length; j++) {
+                        const nextEntry = daySchedule[j];
+                        if (nextEntry?.isLab && nextEntry.subject === entry.subject && nextEntry.semester === entry.semester) {
+                            mergeCount++;
+                        } else {
+                            break;
+                        }
                     }
                   }
                   
-                  const startTime = timeSlots[slotIndex].time.split('–')[0].trim();
-                  const endSlotIndex = slotIndex + mergeCount - 1;
-                  const endTime = timeSlots[endSlotIndex].time.split('–')[1].trim();
-                  const combinedTime = `${startTime} – ${endTime}`;
-
                   cells.push(
-                    <td key={`slot-${slotIndex}`} colSpan={mergeCount} className="p-2 border-l border-slate-200 dark:border-slate-700">
-                      <div className={`w-full h-full rounded-md p-2 flex flex-col justify-center items-center ${colorClasses} transition-colors duration-300`}>
+                    <td key={`slot-${slotIndex}`} colSpan={mergeCount} className="p-1 border-l border-slate-200 dark:border-slate-700">
+                       <button 
+                        onClick={() => onCellClick(day, periodIndex)} 
+                        className={`w-full h-full rounded-md p-2 flex flex-col justify-center items-center text-left ${colorClasses} transition-all duration-200 hover:shadow-lg hover:ring-2 hover:ring-red-500 dark:hover:ring-red-400 group relative`}
+                        title="Click to remove"
+                       >
                         <p className="font-bold text-sm leading-tight">{entry.subject}</p>
                         <p className="text-xs opacity-80 mt-1">{entry.teacher}</p>
-                        {mergeCount > 1 && (
-                          <p className="text-xs opacity-90 mt-1 font-semibold">{combinedTime}</p>
-                        )}
                         <div className="flex items-center gap-x-2 mt-1">
                           <p className="text-xs font-mono opacity-70">{entry.semester}</p>
                           {entry.capacity && (
@@ -293,7 +292,10 @@ const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlot
                             </p>
                           )}
                         </div>
-                      </div>
+                         <div className="absolute inset-0 bg-red-500/80 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-white font-bold text-sm">Remove</span>
+                        </div>
+                      </button>
                     </td>
                   );
 
@@ -318,7 +320,7 @@ const TimetableDisplay: React.FC<TimetableDisplayProps> = ({ timetable, timeSlot
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800/50 rounded-xl">
+    <div className="bg-white dark:bg-slate-800/50 rounded-xl p-6 shadow-sm">
       {renderContent()}
     </div>
   );

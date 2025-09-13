@@ -15,9 +15,10 @@ interface SubjectInputProps {
   onGenerate: () => void;
   isLoading: boolean;
   departmentColorMap: Record<string, typeof DEPARTMENT_COLOR_PALETTE[0]>;
+  onClearAllData: () => void;
 }
 
-const SubjectInput: React.FC<SubjectInputProps> = ({ subjects, setSubjects, onGenerate, isLoading, departmentColorMap }) => {
+const SubjectInput: React.FC<SubjectInputProps> = ({ subjects, setSubjects, onGenerate, isLoading, departmentColorMap, onClearAllData }) => {
   const [workingDepartment, setWorkingDepartment] = useState('');
   const [workingSemester, setWorkingSemester] = useState('');
   const [newDepartmentValue, setNewDepartmentValue] = useState('');
@@ -147,15 +148,27 @@ const SubjectInput: React.FC<SubjectInputProps> = ({ subjects, setSubjects, onGe
       <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg space-y-6">
         <div className="flex justify-between items-center gap-4">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">College Manager</h2>
-          <button 
-            onClick={() => setIsImportModalOpen(true)} 
-            className="flex-shrink-0 flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-            title="Bulk import subjects"
-            aria-label="Bulk import subjects"
-          >
-            <UploadIcon className="w-5 h-5" />
-            Import
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsImportModalOpen(true)} 
+              className="flex-shrink-0 flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+              title="Bulk import subjects"
+              aria-label="Bulk import subjects"
+            >
+              <UploadIcon className="w-5 h-5" />
+              Import
+            </button>
+             <button
+              onClick={onClearAllData}
+              disabled={subjects.length === 0}
+              className="flex-shrink-0 flex items-center justify-center gap-2 px-3 py-2 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-sm font-semibold rounded-md hover:bg-red-200 dark:hover:bg-red-900/70 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Clear all subjects and timetable"
+              aria-label="Clear all data"
+            >
+              <TrashIcon className="w-5 h-5" />
+              Clear
+            </button>
+          </div>
         </div>
         
         <div className="space-y-4 border-b border-slate-200 dark:border-slate-700 pb-6">

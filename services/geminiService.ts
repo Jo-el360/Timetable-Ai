@@ -1,15 +1,57 @@
 
-import { Subject } from "../types";
+import { Subject, Timetable, TimetablePeriod } from "../types";
+import { DAYS, TIME_SLOTS } from "../constants";
 
 // The AI client and types will be loaded dynamically when the generate function is called.
-// This prevents the app from crashing on start-up if the @google/genai module
-// has top-level code that fails in a browser environment.
 let ai: any;
 let genaiModule: any;
 
+/**
+ * A fallback function to generate a plausible, but not optimized, timetable
+ * when the AI service is unavailable (e.g., due to a missing API key).
+ * It uses the provided subjects to fill the schedule.
+ */
+const generateMockTimetable = (subjects: Subject[]): Timetable => {
+  const timetable: Timetable = {};
+  const periodsPerDay = TIME_SLOTS.filter(s => s.type === 'PERIOD').length;
+
+  if (subjects.length === 0) {
+    // Return an empty but valid timetable structure
+    DAYS.forEach(day => {
+      timetable[day] = new Array(periodsPerDay).fill(null);
+    });
+    return timetable;
+  }
+
+  // Create a pool of all possible periods to schedule from the subjects list
+  const periodPool: TimetablePeriod[] = subjects.map(s => ({
+    subject: s.name,
+    teacher: s.teacher,
+    department: s.department,
+    semester: s.semester,
+    isLab: s.isLab,
+    capacity: s.capacity,
+  }));
+
+  let poolIndex = 0;
+  DAYS.forEach(day => {
+    const daySchedule: (TimetablePeriod | null)[] = new Array(periodsPerDay).fill(null);
+    for (let i = 0; i < periodsPerDay; i++) {
+      // Cycle through the pool to fill the schedule
+      daySchedule[i] = periodPool[poolIndex % periodPool.length];
+      poolIndex++;
+    }
+    timetable[day] = daySchedule;
+  });
+
+  return timetable;
+};
+
+
 async function getAiModules() {
   if (!genaiModule) {
-    genaiModule = await import('@google/genai');
+    // @ts-ignore
+    genaiModule = await import('https://aistudiocdn.com/@google/generative-ai');
   }
   return genaiModule;
 }
@@ -17,48 +59,41 @@ async function getAiModules() {
 async function getAiClient() {
   if (!ai) {
     const { GoogleGenAI } = await getAiModules();
-    // Initialize the client directly; the SDK will handle validation on request.
-    ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // This will throw an error if process.env.API_KEY is not set, which we'll catch.
+    const apiKey = (process.env as any).API_KEY;
+    if (!apiKey) {
+      throw new Error("API key is missing.");
+    }
+    ai = new GoogleGenAI({ apiKey });
   }
   return ai;
 }
 
-export const generateTimetable = async (subjects: Subject[]): Promise<string> => {
+interface GenerationResult {
+    timetableJson: string;
+    isSimulated: boolean;
+}
+
+export const generateTimetable = async (subjects: Subject[]): Promise<GenerationResult> => {
   try {
-    const { Type } = await getAiModules();
+    const { HarmCategory, HarmBlockThreshold } = await getAiModules();
+    const aiClient = await getAiClient();
 
-    const periodSchema = {
-      type: Type.OBJECT,
-      properties: {
-        subject: { type: Type.STRING, description: "The name of the subject or activity." },
-        teacher: { type: Type.STRING, description: "The name of the teacher or supervisor." },
-        department: { type: Type.STRING, description: "The department associated with the period." },
-        semester: { type: Type.STRING, description: "The semester this class is for." },
-        isLab: { type: Type.BOOLEAN, description: "Set to true if this period is for a lab session, otherwise false." },
-        capacity: { type: Type.INTEGER, description: "The maximum student capacity for the class." },
-      },
-      required: ['subject', 'teacher', 'department', 'semester', 'isLab'],
+    const generationConfig = {
+      temperature: 0.2,
+      topK: 1,
+      topP: 1,
+      maxOutputTokens: 8192,
+      responseMimeType: "application/json",
     };
-
-    const daySchema = {
-      type: Type.ARRAY,
-      items: periodSchema,
-      description: "An array of periods for the day. It is crucial this array contains exactly 8 items representing the 8 academic periods."
-    };
-
-    const timetableSchema = {
-      type: Type.OBJECT,
-      properties: {
-        Monday: { ...daySchema, description: "Schedule for Monday. Must contain exactly 8 period objects." },
-        Tuesday: { ...daySchema, description: "Schedule for Tuesday. Must contain exactly 8 period objects." },
-        Wednesday: { ...daySchema, description: "Schedule for Wednesday. Must contain exactly 8 period objects." },
-        Thursday: { ...daySchema, description: "Schedule for Thursday. Must contain exactly 8 period objects." },
-        Friday: { ...daySchema, description: "Schedule for Friday. Must contain exactly 8 period objects." },
-      },
-      required: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-    };
-
-
+    
+    const safetySettings = [
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    ];
+    
     const prompt = `
     You are an expert timetable scheduler for an entire college. Your task is to generate a complete and conflict-free weekly timetable from Monday to Friday based on a list of subjects.
 
@@ -92,36 +127,46 @@ export const generateTimetable = async (subjects: Subject[]): Promise<string> =>
     ${JSON.stringify(subjects, null, 2)}
 
     **Output Format:**
-    Provide a valid JSON output that adheres to the schema. The JSON object must have keys for each day ('Monday' through 'Friday'). Each day's value must be an array of exactly 8 objects, representing the 8 periods. Each period object must include the subject, teacher, department, semester, and the 'isLab' flag.
+    Provide a valid JSON output. The JSON object must have keys for each day ('Monday' through 'Friday'). Each day's value must be an array of exactly 8 objects, representing the 8 periods. Each period object must include the subject, teacher, department, semester, and the 'isLab' flag.
     - Set \`isLab\` to \`true\` for any period that is part of a lab session.
     - Set \`isLab\` to \`false\` for all regular classes and placeholder activities (Library Hour, Study Hall, etc.).
+    - Your response must be only the raw JSON, without any surrounding text, explanations, or markdown formatting.
+    - The JSON should look like: \`{"Monday": [...], "Tuesday": [...], ...}\`
   `;
-    const client = await getAiClient();
-    const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: timetableSchema,
-      },
+
+    const result = await aiClient.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: generationConfig,
+        safetySettings,
     });
 
-    if (!response.text) {
+    const responseText = result.text;
+    if (!responseText) {
       throw new Error("Received an empty response from the AI service.");
     }
+    
+    return {
+        timetableJson: responseText,
+        isSimulated: false,
+    };
 
-    return response.text;
   } catch (error) {
     console.error("Error calling Gemini API:", error);
+    if (error instanceof Error && error.message.toLowerCase().includes('api key')) {
+        console.warn("API key not found or invalid. Falling back to mock timetable generator.");
+        // Simulate thinking time to match the feel of the real API call
+        await new Promise(resolve => setTimeout(resolve, 1500)); 
+        const mockTimetable = generateMockTimetable(subjects);
+        return {
+            timetableJson: JSON.stringify(mockTimetable),
+            isSimulated: true,
+        };
+    }
+    // For other errors, re-throw to be handled by the UI.
     if (error instanceof Error) {
-        // The SDK error for a missing key will contain "API key". This provides a user-friendly message for that specific case.
-        if (error.message.toLowerCase().includes('api key')) {
-            throw new Error("API key is missing or invalid. Please ensure it's configured correctly in your environment.");
-        }
-        // For other errors, pass the original message for better debugging.
         throw new Error(`An error occurred during timetable generation: ${error.message}`);
     }
-    // Fallback for non-Error objects.
     throw new Error("An unknown error occurred while communicating with the AI scheduling service.");
   }
 };
