@@ -1,7 +1,17 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Subject } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+// The AI client will be initialized lazily on the first API call
+// to prevent the app from crashing on start-up if the API key is missing.
+let ai: GoogleGenAI;
+
+function getAiClient(): GoogleGenAI {
+  if (!ai) {
+    ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  }
+  return ai;
+}
 
 const periodSchema = {
   type: Type.OBJECT,
@@ -75,7 +85,7 @@ export const generateTimetable = async (subjects: Subject[]): Promise<string> =>
     - Set \`isLab\` to \`false\` for all regular classes and placeholder activities (Library Hour, Study Hall, etc.).
   `;
   try {
-    const response = await ai.models.generateContent({
+    const response = await getAiClient().models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
