@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Subject, Timetable } from './types';
 import { DEPARTMENT_COLOR_PALETTE, DAYS, TIME_SLOTS } from './constants';
 import { generateTimetable } from './services/geminiService';
@@ -8,7 +8,6 @@ import TimetableDisplay from './components/TimetableDisplay';
 
 const App: React.FC = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
-
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +15,24 @@ const App: React.FC = () => {
   const [departmentFilter, setDepartmentFilter] = useState<string>('All');
   const [semesterFilter, setSemesterFilter] = useState<string>('All');
   const [teacherFilter, setTeacherFilter] = useState<string>('All');
+
+  // Load state from localStorage on initial render
+  useEffect(() => {
+    try {
+      const savedData = localStorage.getItem('collegeTimetableData');
+      if (savedData) {
+        const { subjects: savedSubjects, timetable: savedTimetable } = JSON.parse(savedData);
+        if (Array.isArray(savedSubjects) && savedTimetable) {
+          setSubjects(savedSubjects);
+          setTimetable(savedTimetable);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load or parse data from localStorage", e);
+      // Clear potentially corrupted data
+      localStorage.removeItem('collegeTimetableData');
+    }
+  }, []);
 
   const uniqueDepartments = useMemo(() => ['All', ...Array.from(new Set(subjects.map(s => s.department)))], [subjects]);
   const uniqueSemesters = useMemo(() => ['All', ...Array.from(new Set(subjects.map(s => s.semester)))], [subjects]);
@@ -57,6 +74,17 @@ const App: React.FC = () => {
         setDepartmentFilter('All');
         setSemesterFilter('All');
         setTeacherFilter('All');
+
+        // Save the successful result and the subjects that created it to localStorage
+        try {
+          const dataToSave = {
+            subjects: subjects,
+            timetable: newTimetable,
+          };
+          localStorage.setItem('collegeTimetableData', JSON.stringify(dataToSave));
+        } catch (e) {
+          console.error("Failed to save data to localStorage", e);
+        }
 
       } catch (parseError) {
         console.error("JSON parsing or validation error:", parseError);

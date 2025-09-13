@@ -1,3 +1,4 @@
+
 import { Subject } from "../types";
 
 // The AI client and types will be loaded dynamically when the generate function is called.
@@ -16,9 +17,7 @@ async function getAiModules() {
 async function getAiClient() {
   if (!ai) {
     const { GoogleGenAI } = await getAiModules();
-    if (!process.env.API_KEY) {
-      throw new Error("API_KEY environment variable is missing.");
-    }
+    // Initialize the client directly; the SDK will handle validation on request.
     ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
   return ai;
@@ -114,9 +113,15 @@ export const generateTimetable = async (subjects: Subject[]): Promise<string> =>
     return response.text;
   } catch (error) {
     console.error("Error calling Gemini API:", error);
-    if (error instanceof Error && error.message.includes("API_KEY")) {
-       throw new Error("API key is missing or invalid. Please ensure it's configured correctly in your environment.");
+    if (error instanceof Error) {
+        // The SDK error for a missing key will contain "API key". This provides a user-friendly message for that specific case.
+        if (error.message.toLowerCase().includes('api key')) {
+            throw new Error("API key is missing or invalid. Please ensure it's configured correctly in your environment.");
+        }
+        // For other errors, pass the original message for better debugging.
+        throw new Error(`An error occurred during timetable generation: ${error.message}`);
     }
-    throw new Error("Failed to communicate with the AI scheduling service. Please check your internet connection or API key configuration.");
+    // Fallback for non-Error objects.
+    throw new Error("An unknown error occurred while communicating with the AI scheduling service.");
   }
 };
